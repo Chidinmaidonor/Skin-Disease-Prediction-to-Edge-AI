@@ -1,48 +1,34 @@
 import streamlit as st
-import tensorflow as tf
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
-import numpy as np
-from PIL import Image
+import requests
+import os
 
-# Load model
-model = load_model("model/disease_prediction.h5")
-model.compile(optimizer='adam', 
-loss='categorical_crossentropy', metrics=['accuracy'])
+st.title("🧑‍⚕️ Skin Disease Prediction (via Flask API)")
 
-# Class labels
-class_names = ['Acne and Rosacea', 'Actinic Keratosis','Atopic Dermatitis','Bullous Disease',
-               'Cellulitis Impetigo','Eczema','Exanthems','Herpes HPV','Light disease','Lupus',
-               'Melanoma Skin Cancer','Poison Ivy','Psoriasis','Seborrheic','Systemic Disease',
-               'Tinea Ringworm','Urticaria Hives','Vascular Tumors','Vasculitis','Warts Molluscum']
+# Upload image
+uploaded_file = st.file_uploader("Upload a skin image", type=["jpg", "jpeg", "png"])
 
-# Streamlit UI
-st.title("🩺 Chidinma Skin Disease Prediction App")
+if uploaded_file is not None:
+    # Save temporarily
+    temp_path = os.path.join("temp.jpg")
+    with open(temp_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
 
-uploaded_file = st.file_uploader("Upload an image...", type=["jpg", "jpeg", "png"])
+    st.image(temp_path, caption="Uploaded Image", use_column_width=True)
 
-def predict_image(img):
-    # Ensure image is in correct format
-    if not isinstance(img, Image.Image):
-        img = Image.open(img)
+    if st.button("Predict"):
+        try:
+            # 🔗 Send request to Flask API
+            response = requests.post(
+                "http://127.0.0.1:5000/receive",
+                json={"image_path": temp_path}
+            )
 
-    # Preprocess
-    img = img.resize((128, 128))  
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-    img_array /= 255.0  # Normalize
+            if response.status_code == 200:
+                result = response.json()
+                st.success(f"✅ Prediction: {result['received']['prediction']} "
+                           f"(Confidence: {result['received']['confidence']:.2f})")
+            else:
+                st.error(f"❌ API Error: {response.text}")
 
-    # Predict
-    predictions = model.predict(img_array)
-    predicted_index = np.argmax(predictions, axis=1)[0]
-    confidence = float(np.max(predictions))  # Highest probability
-    predicted_class = class_names[predicted_index]
-
-    return predicted_class, confidence
-
-# Handle uploaded image
-if uploaded_file:
-    st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
-    result, confidence = predict_image(uploaded_file)
-    st.write(f"### ✅ Prediction: {result}")
-    st.write(f"### 🔎 Confidence: {confidence:.2f}")
+        except Exception as e:
+            st.error(f"⚠️ Could not connect to Flask API: {e}")
